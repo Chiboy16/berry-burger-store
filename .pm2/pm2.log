@@ -1,0 +1,67 @@
+2026-06-03T17:39:24: PM2 log: ===============================================================================
+2026-06-03T17:39:24: PM2 log: --- New PM2 Daemon started ----------------------------------------------------
+2026-06-03T17:39:24: PM2 log: Time                 : Wed Jun 03 2026 17:39:24 GMT+0100 (West Africa Time)
+2026-06-03T17:39:24: PM2 log: PM2 version          : 7.0.1
+2026-06-03T17:39:24: PM2 log: Node.js version      : 26.2.0
+2026-06-03T17:39:24: PM2 log: Current arch         : arm64
+2026-06-03T17:39:24: PM2 log: PM2 home             : /data/data/com.termux/files/home/.pm2
+2026-06-03T17:39:24: PM2 log: PM2 PID file         : /data/data/com.termux/files/home/.pm2/pm2.pid
+2026-06-03T17:39:24: PM2 log: RPC socket file      : /data/data/com.termux/files/home/.pm2/rpc.sock
+2026-06-03T17:39:24: PM2 log: BUS socket file      : /data/data/com.termux/files/home/.pm2/pub.sock
+2026-06-03T17:39:24: PM2 log: Application log path : /data/data/com.termux/files/home/.pm2/logs
+2026-06-03T17:39:24: PM2 log: Worker Interval      : 30000
+2026-06-03T17:39:24: PM2 log: Process dump file    : /data/data/com.termux/files/home/.pm2/dump.pm2
+2026-06-03T17:39:24: PM2 log: Concurrent actions   : 2
+2026-06-03T17:39:24: PM2 log: SIGTERM timeout      : 1600
+2026-06-03T17:39:24: PM2 log: Runtime Binary       : /data/data/com.termux/files/usr/bin/node
+2026-06-03T17:39:24: PM2 log: ===============================================================================
+2026-06-03T17:39:24: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:24: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:24: PM2 warn: [pidusage] We couldn't find uptime from /proc/uptime, using os.uptime() value
+2026-06-03T17:39:25: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:25: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:25: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:25: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:25: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:25: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:26: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:26: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:26: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:27: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:27: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:27: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:28: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:28: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:28: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:28: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:28: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:28: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:29: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:29: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:29: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:30: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:30: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:30: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:30: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:30: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:30: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:31: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:31: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:31: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:32: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:32: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:32: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:32: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:33: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:33: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:33: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:33: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:33: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:34: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:34: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:34: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:35: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:35: PM2 log: App [berry-bot:0] starting in -fork mode-
+2026-06-03T17:39:35: PM2 log: App [berry-bot:0] online
+2026-06-03T17:39:35: PM2 log: App [berry-bot:0] exited with code [1] via signal [SIGINT]
+2026-06-03T17:39:35: PM2 log: Script /data/data/com.termux/files/home/index.js had too many unstable restarts (16). Stopped. "errored"

@@ -1,0 +1,75 @@
+{
+  "users": {
+    "6499322090": {
+      "balance": 0,
+      "ref": null
+    },
+    "8281129727": {
+      "balance": 0,
+      "ref": null
+    }
+  },
+  "stock": {
+    "whatsapp": [
+      {
+        "id": 101,
+        "number": "+16839296777",
+        "price": 2500,
+        "link": "https://api668.com/sms/by_key?key=8c04ec7e1e484109bba7f068cdccb420",
+        "details": "Check faq on how to login"
+      }
+    ],
+    "telegram": []
+  },
+  "nextIds": {
+    "whatsapp": 102,
+    "telegram": 101
+  },
+  "payments": {
+    "BB_1780930502022_8281129727": {
+      "userId": 8281129727,
+      "amount": 2500,
+      "status": "failed"
+    },
+    "BB_1780930892041_8281129727": {
+      "userId": 8281129727,
+      "amount": 500,
+      "status": "pending"
+    },
+    "BB_1780930892074_8281129727": {
+      "userId": 8281129727,
+      "amount": 500,
+      "status": "pending"
+    },
+    "BB_1780946828307_7686174388": {
+      "userId": 7686174388,
+      "amount": 1000,
+      "status": "pending"
+    },
+    "BB_1780956463643_6499322090": {
+      "userId": 6499322090,
+      "amount": 2500,
+      "status": "pending"
+    },
+    "BB_1780956507111_8281129727": {
+      "userId": 8281129727,
+      "amount": 500,
+      "status": "pending"
+    },
+    "BB_1780956781209_6499322090": {
+      "userId": 6499322090,
+      "amount": 2500,
+      "status": "pending"
+    },
+    "BB_1780957102868_6499322090": {
+      "userId": 6499322090,
+      "amount": 2500,
+      "status": "pending"
+    }
+  },
+  "referrals": {},
+  "usedRefs": {},
+  "history": {},
+  "orders": {},
+  "banned": {}
+}

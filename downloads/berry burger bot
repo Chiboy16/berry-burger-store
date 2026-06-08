@@ -1,0 +1,756 @@
+cat > index.js << 'EOF'
+require("dotenv").config();
+const fs = require("fs");
+const express = require("express");
+const TelegramBot = require("node-telegram-bot-api");
+
+const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
+const ADMIN_ID = Number(process.env.ADMIN_ID);
+let adminState = {};
+
+const app = express();
+app.use(express.json());
+
+console.log("🍓 Berry Burger Store LIVE");
+
+// CONSTANTS & RULES
+const LOW_STOCK_THRESHOLD = 3; 
+const REFERRAL_BONUS_PERCENT = 10; // 10% bonus of friend's first deposit given to referrer
+
+// =====================
+// DB MANAGEMENT
+// =====================
+function loadDB() {
+    return JSON.parse(fs.readFileSync("./db.json"));
+}
+
+function saveDB(db) {
+    fs.writeFileSync("./db.json", JSON.stringify(db, null, 2));
+}
+
+function initDB() {
+    let db;
+    try {
+        db = loadDB();
+    } catch (e) {
+        db = {
+            users: {},
+            stock: { whatsapp: [], telegram: [] },
+            nextIds: { whatsapp: 100, telegram: 100 },
+            payments: {},
+            referrals: {},
+            usedRefs: {},
+            history: {}, // Format: { chatId: [ { type, amount, description, time } ] }
+            orders: {}   // Records completed receipts
+        };
+    }
+
+    if (!db.users) db.users = {};
+    if (!db.stock) db.stock = { whatsapp: [], telegram: [] };
+    if (!db.nextIds) db.nextIds = { whatsapp: 100, telegram: 100 };
+    if (!db.payments) db.payments = {};
+    if (!db.referrals) db.referrals = {};
+    if (!db.usedRefs) db.usedRefs = {};
+    if (!db.history) db.history = {};
+    if (!db.orders) db.orders = {};
+
+    saveDB(db);
+}
+initDB();
+
+function sortStock(db) {
+    db.stock.whatsapp.sort((a, b) => a.price - b.price);
+    db.stock.telegram.sort((a, b) => a.price - b.price);
+}
+
+// =====================
+// HELPER UTILITIES
+// =====================
+function logTransaction(db, chatId, type, amount, description) {
+    if (!db.history[chatId]) db.history[chatId] = [];
+    db.history[chatId].push({
+        type,
+        amount,
+        description,
+        time: new Date().toLocaleString()
+    });
+}
+
+function checkLowStockAlert(db, type) {
+    const count = db.stock[type].length;
+    if (count <= LOW_STOCK_THRESHOLD) {
+        bot.sendMessage(ADMIN_ID, `⚠️ **LOW STOCK ALERT** ⚠️\n\nThe ${type.toUpperCase()} inventory has fallen down to **${count}** items left! Please restock soon.`);
+    }
+}
+
+// Clean up pending payments older than 1 hour
+setInterval(() => {
+    try {
+        const db = loadDB();
+        let changed = false;
+        const cutoff = Date.now() - 60 * 60 * 1000; 
+
+        Object.keys(db.payments).forEach(ref => {
+            if (db.payments[ref].status === "pending") {
+                const parts = ref.split("_");
+                const timestamp = Number(parts[1]);
+                if (timestamp && timestamp < cutoff) {
+                    db.payments[ref].status = "failed";
+                    changed = true;
+                }
+            }
+        });
+        if (changed) saveDB(db);
+    } catch (e) {
+        console.error("Cleanup error:", e);
+    }
+}, 10 * 60 * 1000);
+
+// =====================
+// MENUS
+// =====================
+function menu(chatId, balance = 0) {
+    const keyboard = [
+        ["💰 Top Up Wallet", "🛒 Buy Numbers"],
+        ["💳 Balance & History", "👥 Invite Program"],
+        ["📞 FAQ", "📞 Support"]
+    ];
+
+    if (chatId === ADMIN_ID) {
+        keyboard.splice(2, 0, ["📊 Admin Panel"]); 
+    }
+
+    bot.sendMessage(chatId,
+`🍓 **Berry Burger Store**
+
+Balance: **₦${balance}**
+
+Select an action from the options below 👇`,
+{
+        parse_mode: "Markdown",
+        reply_markup: {
+            keyboard: keyboard,
+            resize_keyboard: true
+        }
+    });
+}
+
+// =====================
+// TELEGRAM INCOMING ENGINE
+// =====================
+bot.onText(/\/start (.+)/, (msg, match) => {
+    const db = loadDB();
+    const chatId = msg.chat.id;
+    const referrerId = Number(match[1]);
+
+    if (!db.users[chatId]) {
+        db.users[chatId] = { balance: 0, ref: referrerId !== chatId ? referrerId : null };
+        if (referrerId && referrerId !== chatId) {
+            if (!db.referrals[referrerId]) db.referrals[referrerId] = [];
+            if (!db.referrals[referrerId].includes(chatId)) {
+                db.referrals[referrerId].push(chatId);
+            }
+        }
+        saveDB(db);
+    }
+    menu(chatId, db.users[chatId].balance);
+});
+
+bot.onText(/\/start$/, (msg) => {
+    const db = loadDB();
+    const chatId = msg.chat.id;
+
+    if (!db.users[chatId]) {
+        db.users[chatId] = { balance: 0, ref: null };
+        saveDB(db);
+    }
+    menu(chatId, db.users[chatId].balance);
+});
+
+bot.on("message", (msg) => {
+    const db = loadDB();
+    const chatId = msg.chat.id;
+    const text = msg.text;
+
+    if (!text || text.startsWith("/")) return;
+    const user = db.users[chatId] || { balance: 0, ref: null };
+
+    // GLOBAL BACK
+    if (text === "⬅️ Back") {
+        if (adminState[chatId]) delete adminState[chatId];
+        return menu(chatId, user.balance);
+    }
+
+    // =====================
+    // CORE USER FEATURES
+    // =====================
+    if (text === "💳 Balance & History") {
+        const historyList = db.history[chatId] || [];
+        let historyText = `💳 **YOUR ACCOUNT SUMMARY**\n\nBalance: **₦${user.balance}**\n\n📋 *Recent Wallet Ledger:*`;
+        
+        if (historyList.length === 0) {
+            historyText += "\nNo transaction records found yet.";
+        } else {
+            const recent = historyList.slice(-5).reverse();
+            recent.forEach(h => {
+                const prefix = h.type === "deposit" ? "➕" : "➖";
+                historyText += `\n\n${prefix} **₦${h.amount}** (${h.type})\n📅 _${h.time}_\n📝 \`${h.description}\``;
+            });
+        }
+        return bot.sendMessage(chatId, historyText, { parse_mode: "Markdown" });
+    }
+
+    if (text === "👥 Invite Program") {
+        const referralsCount = db.referrals[chatId] ? db.referrals[chatId].length : 0;
+        const totalEarned = db.usedRefs[chatId] || 0;
+        const botUsername = "BerryBurgerStoreBot"; // Fallback placeholder context
+        const refLink = `https://t.me/your_bot_username?start=${chatId}`; // Note: set your real production handle here
+
+        return bot.sendMessage(chatId,
+`👥 **REFERRAL PROGRAM**
+
+Invite your friends and earn **${REFERRAL_BONUS_PERCENT}%** on their very first wallet top-up!
+
+📈 **Your Stats:**
+• Friends Invited: **${referralsCount}**
+• Total Referral Bonus Earned: **₦${totalEarned}**
+
+🔗 **Your Unique Referral Link:**
+\`https://t.me/${bot.options.username || 'Bot'}_bot?start=${chatId}\`
+
+_Tap the link above to copy and share it with others!_`, { parse_mode: "Markdown" });
+    }
+
+    if (text === "📞 Support") {
+        return bot.sendMessage(chatId, "📞 For any assistance or payment disputes, contact: @Shopwithberryburger");
+    }
+
+    if (text === "📞 FAQ") {
+        return bot.sendMessage(chatId,
+`📌 **WATCH HOW TO LOG IN TO WHATSAPP WITH SMS LINK**
+
+🔗 Tutorial: https://tinyurl.com/34jpuc23
+
+⚠️ **IMPORTANT NOTICE:**
+• All logs come with a 10-hour warranty only.
+• Issues reported after the warranty period may not be attended to.
+• Please wait a few hours before making any changes or edits.
+• For better security, use a paid VPN (HMA or Surfshark recommended).
+• Always secure your logs after purchase.
+
+🙏 Thank you for choosing Berry Burger Store. Enjoy our services and trade with confidence.`, { parse_mode: "Markdown" });
+    }
+
+    // =====================
+    // ADVANCED INTERACTIVE CATALOG SYSTEM
+    // =====================
+    if (text === "🛒 Buy Numbers") {
+        return bot.sendMessage(chatId, "Select the category platform you wish to buy accounts for 👇", {
+            reply_markup: {
+                keyboard: [["📱 WhatsApp Stock", "✈️ Telegram Stock"], ["⬅️ Back"]],
+                resize_keyboard: true
+            }
+        });
+    }
+
+    if (text === "📱 WhatsApp Stock" || text === "✈️ Telegram Stock") {
+        const targetType = text === "📱 WhatsApp Stock" ? "whatsapp" : "telegram";
+        const stockItems = db.stock[targetType];
+
+        if (stockItems.length === 0) {
+            return bot.sendMessage(chatId, `❌ Sorry, all items in **${targetType.toUpperCase()}** are currently out of stock. Please check back later!`);
+        }
+
+        // Display up to 5 cheapest options individually
+        let catalogText = `🛒 **AVAILABLE ${targetType.toUpperCase()} ITEMS**\n\nSelect an option below to buy (Sorted from cheapest):`;
+        const inlineButtons = [];
+
+        stockItems.slice(0, 5).forEach((item) => {
+            const displayId = `${targetType === "whatsapp" ? "WA" : "TG"}-${item.id}`;
+            catalogText += `\n\n📦 **ID: ${displayId}**\n💰 Price: *₦${item.price}*\n📞 Number: \`${item.number.substring(0, 6)}***\``;
+            
+            inlineButtons.push([{
+                text: `Buy ${displayId} (₦${item.price})`,
+                callback_data: `CONFIRM_BUY:${targetType}:${item.id}`
+            }]);
+        });
+
+        return bot.sendMessage(chatId, catalogText, {
+            parse_mode: "Markdown",
+            reply_markup: { inline_keyboard: inlineButtons }
+        });
+    }
+
+    // =====================
+    // ADMINISTRATIVE CONSOLE
+    // =====================
+    if (text === "📊 Admin Panel") {
+        if (chatId !== ADMIN_ID) return bot.sendMessage(chatId, "❌ Access denied");
+
+        const totalUsers = Object.keys(db.users).length;
+        const totalStock = db.stock.whatsapp.length + db.stock.telegram.length;
+        const totalSales = Object.values(db.payments).filter(p => p.status === "success").length;
+
+        return bot.sendMessage(chatId,
+`👑 **ADMIN PANEL CONSOLE**
+
+👥 Total Registered Users: **${totalUsers}**
+📦 Total Available Stock: **${totalStock}**
+💰 Total Completed Payments: **${totalSales}**`,
+{
+            parse_mode: "Markdown",
+            reply_markup: {
+                keyboard: [
+                    ["➕ Add Stock", "📦 View Stock"],
+                    ["📝 Edit Stock Item", "❌ Delete Stock"],
+                    ["📊 Analytics", "📢 Broadcast Blast"],
+                    ["⬅️ Back"]
+                ],
+                resize_keyboard: true
+            }
+        });
+    }
+
+    if (text === "📊 Analytics" && chatId === ADMIN_ID) {
+        const now = Date.now();
+        const oneDay = 24 * 60 * 60 * 1000;
+        const oneWeek = 7 * oneDay;
+
+        const paymentsArr = Object.values(db.payments).filter(p => p.status === "success");
+        
+        let dailyRev = 0, weeklyRev = 0, totalRev = 0;
+        paymentsArr.forEach(p => {
+            totalRev += p.amount;
+            const refParts = p.reference ? p.reference.split("_") : [];
+            const pTime = refParts[1] ? Number(refParts[1]) : 0;
+            
+            if (pTime && (now - pTime <= oneDay)) dailyRev += p.amount;
+            if (pTime && (now - pTime <= oneWeek)) weeklyRev += p.amount;
+        });
+
+        const ordersArr = Object.values(db.orders);
+        let waCount = 0, tgCount = 0;
+        ordersArr.forEach(o => {
+            if (o.type === "whatsapp") waCount++;
+            if (o.type === "telegram") tgCount++;
+        });
+
+        const topType = waCount === 0 && tgCount === 0 ? "None" : (waCount >= tgCount ? `WhatsApp (${waCount} sales)` : `Telegram (${tgCount} sales)`);
+
+        return bot.sendMessage(chatId,
+`📊 **DEEP BUSINESS ANALYTICS**
+
+💰 **Revenue Performance:**
+• Last 24 Hours: **₦${dailyRev}**
+• Last 7 Days: **₦${weeklyRev}**
+• All-Time Revenue: **₦${totalRev}**
+
+🔥 **Product Velocity:**
+• Top Selling Platform Type: *${topType}*
+• Estimated Net Valuation (In Stock): *₦${db.stock.whatsapp.reduce((a,b)=>a+b.price,0)+db.stock.telegram.reduce((a,b)=>a+b.price,0)}*`, { parse_mode: "Markdown" });
+    }
+
+    // BROADCAST ALERTS ENGINE
+    if (text === "📢 Broadcast Blast" && chatId === ADMIN_ID) {
+        adminState[chatId] = { step: "BROADCAST_TXT" };
+        return bot.sendMessage(chatId, "📝 Enter the global message text you wish to send to all users across the system:");
+    }
+
+    if (adminState[chatId] && adminState[chatId].step === "BROADCAST_TXT") {
+        const targetMessage = text;
+        delete adminState[chatId];
+
+        const userIds = Object.keys(db.users);
+        let deliveredCount = 0;
+
+        bot.sendMessage(chatId, `🚀 Starting global transmission broadcast to ${userIds.length} users...`);
+        
+        userIds.forEach(uid => {
+            bot.sendMessage(uid, `📢 **STORE ANNOUNCEMENT**\n\n${targetMessage}`, { parse_mode: "Markdown" })
+                .then(() => { deliveredCount++; })
+                .catch(() => {});
+        });
+
+        return bot.sendMessage(chatId, `✅ Broadcast complete. Successfully delivered to users.`);
+    }
+
+    // =====================
+    // RESTRUCTURED SEQUENTIAL ADD FLOW
+    // =====================
+    if (text === "➕ Add Stock" && chatId === ADMIN_ID) {
+        adminState[chatId] = { step: "TYPE" };
+        return bot.sendMessage(chatId, `Select configuration item type:`, {
+            reply_markup: {
+                keyboard: [["📱 WhatsApp"], ["✈️ Telegram"], ["⬅️ Back"]],
+                resize_keyboard: true
+            }
+        });
+    }
+
+    if (adminState[chatId] && adminState[chatId].step === "TYPE" && (text === "📱 WhatsApp" || text === "✈️ Telegram")) {
+        adminState[chatId].type = text === "📱 WhatsApp" ? "whatsapp" : "telegram";
+        adminState[chatId].step = "PRICE";
+        return bot.sendMessage(chatId, "💰 Enter stock item listing price (Numbers only):");
+    }
+
+    if (adminState[chatId] && adminState[chatId].step === "PRICE") {
+        if (isNaN(text)) return bot.sendMessage(chatId, "❌ Please enter valid numerical digits for the valuation price:");
+        adminState[chatId].price = Number(text);
+        adminState[chatId].step = "NUMBER";
+        return bot.sendMessage(chatId, "📞 Enter profile credential phone line number:");
+    }
+
+    if (adminState[chatId] && adminState[chatId].step === "NUMBER") {
+        adminState[chatId].number = text;
+        adminState[chatId].step = "LINK";
+        return bot.sendMessage(chatId, "🔗 Provide authentication Login / SMS Link (or type 'None'):");
+    }
+
+    if (adminState[chatId] && adminState[chatId].step === "LINK") {
+        adminState[chatId].link = text;
+        adminState[chatId].step = "DETAILS";
+        return bot.sendMessage(chatId, "📝 Provide backup payload keys / additional comments (or type 'None'):");
+    }
+
+    if (adminState[chatId] && adminState[chatId].step === "DETAILS") {
+        const itemType = adminState[chatId].type;
+        const currentAssignedId = db.nextIds[itemType];
+        
+        const item = {
+            id: currentAssignedId,
+            number: adminState[chatId].number,
+            price: adminState[chatId].price,
+            link: adminState[chatId].link,
+            details: text
+        };
+
+        db.stock[itemType].push(item);
+        db.nextIds[itemType] += 1; // Increment sequential range key
+        sortStock(db);
+        saveDB(db);
+
+        delete adminState[chatId];
+        return bot.sendMessage(chatId, `✅ Stock entry registered successfully as ID: **${itemType === "whatsapp" ? "WA" : "TG"}-${currentAssignedId}**`, { parse_mode: "Markdown" });
+    }
+
+    // =====================
+    // EDIT INVENTORY ENGINE
+    // =====================
+    if (text === "📝 Edit Stock Item" && chatId === ADMIN_ID) {
+        adminState[chatId] = { step: "EDIT_CHOOSE_ID" };
+        return bot.sendMessage(chatId, "📝 Enter the categorical lookup ID of the asset you want to update (e.g., `WA-100` or `TG-101`):", { parse_mode: "Markdown" });
+    }
+
+    if (adminState[chatId] && adminState[chatId].step === "EDIT_CHOOSE_ID") {
+        const cleanedInput = text.toUpperCase().trim();
+        let targetPlatform = null;
+        let idVal = null;
+
+        if (cleanedInput.startsWith("WA-")) {
+            targetPlatform = "whatsapp";
+            idVal = Number(cleanedInput.replace("WA-", ""));
+        } else if (cleanedInput.startsWith("TG-")) {
+            targetPlatform = "telegram";
+            idVal = Number(cleanedInput.replace("TG-", ""));
+        }
+
+        if (!targetPlatform || isNaN(idVal)) {
+            return bot.sendMessage(chatId, "❌ Invalid ID matching template format. Please enter like `WA-100` or `TG-100`:");
+        }
+
+        const itemIndex = db.stock[targetPlatform].findIndex(x => x.id === idVal);
+        if (itemIndex === -1) return bot.sendMessage(chatId, "❌ Asset could not be located inside active registration rows.");
+
+        adminState[chatId] = {
+            step: "EDIT_SELECT_FIELD",
+            platform: targetPlatform,
+            index: itemIndex,
+            itemId: idVal
+        };
+
+        return bot.sendMessage(chatId, `Asset Found! What property would you like to alter?`, {
+            reply_markup: {
+                keyboard: [["Price Modifier", "Update Phone Number"], ["Update Link Data", "Update Description Notes"], ["⬅️ Back"]],
+                resize_keyboard: true
+            }
+        });
+    }
+
+    if (adminState[chatId] && adminState[chatId].step === "EDIT_SELECT_FIELD") {
+        if (text === "Price Modifier") adminState[chatId].field = "price";
+        else if (text === "Update Phone Number") adminState[chatId].field = "number";
+        else if (text === "Update Link Data") adminState[chatId].field = "link";
+        else if (text === "Update Description Notes") adminState[chatId].field = "details";
+        else return bot.sendMessage(chatId, "Please choose an active menu element modifier:");
+
+        adminState[chatId].step = "EDIT_COMMIT_VAL";
+        return bot.sendMessage(chatId, `Enter the new setting value for **${adminState[chatId].field.toUpperCase()}**:`);
+    }
+
+    if (adminState[chatId] && adminState[chatId].step === "EDIT_COMMIT_VAL") {
+        const currentMeta = adminState[chatId];
+        let finalizedValue = text;
+
+        if (currentMeta.field === "price") {
+            if (isNaN(text)) return bot.sendMessage(chatId, "❌ Input value must be numerical digits:");
+            finalizedValue = Number(text);
+        }
+
+        db.stock[currentMeta.platform][currentMeta.index][currentMeta.field] = finalizedValue;
+        if (currentMeta.field === "price") sortStock(db);
+        saveDB(db);
+
+        delete adminState[chatId];
+        return bot.sendMessage(chatId, "✅ Database inventory parameters written and structured cleanly!");
+    }
+
+    // =====================
+    // VIEW / REMOVE
+    // =====================
+    if (text === "📦 View Stock" && chatId === ADMIN_ID) {
+        let stockText = `📦 **CURRENT SYSTEM RESERVES**\n\nWhatsApp Count: **${db.stock.whatsapp.length}**\nTelegram Count: **${db.stock.telegram.length}**\n\n`;
+
+        db.stock.whatsapp.forEach(item => {
+            stockText += `• **WA-${item.id}** | ₦${item.price} | \`${item.number}\` | Link: _${item.link}_\n`;
+        });
+        db.stock.telegram.forEach(item => {
+            stockText += `• **TG-${item.id}** | ₦${item.price} | \`${item.number}\` | Link: _${item.link}_\n`;
+        });
+
+        if (db.stock.whatsapp.length === 0 && db.stock.telegram.length === 0) stockText += "Inventory register rows are fully clean.";
+        return bot.sendMessage(chatId, stockText, { parse_mode: "Markdown" });
+    }
+
+    if (text === "❌ Delete Stock" && chatId === ADMIN_ID) {
+        adminState[chatId] = { step: "DELETE" };
+        return bot.sendMessage(chatId, "Enter formatted ID string to clear from index rows (e.g., `WA-100` or `TG-105`):");
+    }
+
+    if (adminState[chatId] && adminState[chatId].step === "DELETE") {
+        const normalized = text.toUpperCase().trim();
+        let targetArray = null;
+        let lookupId = null;
+
+        if (normalized.startsWith("WA-")) {
+            targetArray = "whatsapp";
+            lookupId = Number(normalized.replace("WA-", ""));
+        } else if (normalized.startsWith("TG-")) {
+            targetArray = "telegram";
+            lookupId = Number(normalized.replace("TG-", ""));
+        }
+
+        if (!targetArray || isNaN(lookupId)) {
+            return bot.sendMessage(chatId, "❌ Invalid lookup parser key format. Use `WA-100` or `TG-100` syntax.");
+        }
+
+        db.stock[targetArray] = db.stock[targetArray].filter(x => x.id !== lookupId);
+        saveDB(db);
+        delete adminState[chatId];
+        return bot.sendMessage(chatId, "✅ Inventory matrix cleared of matching identifier keys!");
+    }
+
+    // =====================
+    // WALLET TOPUP INVOICING
+    // =====================
+    if (text === "💰 Top Up Wallet") {
+        return bot.sendMessage(chatId, `Select an amount to fund your balance 👇`, {
+            reply_markup: {
+                keyboard: [["500", "1000", "2500"], ["5000", "7500", "10000"], ["20000"], ["⬅️ Back"]],
+                resize_keyboard: true
+            }
+        });
+    }
+
+    const amounts = ["500", "1000", "2500", "5000", "7500", "10000", "20000"];
+    if (amounts.includes(text)) {
+        const amount = Number(text);
+        const reference = "BB_" + Date.now() + "_" + chatId;
+
+        db.payments[reference] = { userId: chatId, amount, status: "pending" };
+        saveDB(db);
+
+        const payLink = `${process.env.KORA_CHECKOUT}?reference=${reference}&amount=${amount}`;
+        return bot.sendMessage(chatId,
+`💳 **PAYMENT GENERATED SUCCESSFULLY**
+
+Amount: **₦${amount}**
+Invoice Ref: \`${reference}\`
+
+_Tap the button below to settle transaction tracking parameters secure checkout portal:_`, {
+            parse_mode: "Markdown",
+            reply_markup: { inline_keyboard: [[{ text: "Proceed Payment ✅", url: payLink }]] }
+        });
+    }
+});
+
+// =====================
+// INLINE DATA CAPTURE ENGINE (PURCHASE CONFIRMATION)
+// =====================
+bot.on("callback_query", (query) => {
+    const data = query.data;
+    const chatId = query.message.chat.id;
+    const db = loadDB();
+    const user = db.users[chatId] || { balance: 0, ref: null };
+
+    if (data.startsWith("CONFIRM_BUY:")) {
+        const [,, itemIdStr] = data.split(":");
+        const platformType = data.split(":")[1];
+        const targetId = Number(itemIdStr);
+
+        const item = db.stock[platformType].find(x => x.id === targetId);
+        if (!item) {
+            bot.answerCallbackQuery(query.id, { text: "❌ Item no longer available." });
+            return bot.sendMessage(chatId, "This asset line was acquired or adjusted by administration.");
+        }
+
+        // Send a secure prompt checkout block preventing accidental wallet drops
+        const printableId = `${platformType === "whatsapp" ? "WA" : "TG"}-${item.id}`;
+        return bot.sendMessage(chatId,
+`⚠️ **CONFIRM YOUR PURCHASE ORDER**
+
+Product Segment: **${platformType.toUpperCase()}**
+Item ID Code: **${printableId}**
+Line Number: \`${item.number}\`
+Total Debited Valuation: **₦${item.price}**
+
+_Do you authorize the release of wallet funding for this purchase receipt?_`, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "Authorize Purchase ✅", callback_data: `COMMIT_BUY:${platformType}:${item.id}` },
+                        { text: "Cancel ❌", callback_data: "CANCEL_PURCHASE" }
+                    ]
+                ]
+            }
+        });
+    }
+
+    if (data.startsWith("COMMIT_BUY:")) {
+        const [,, itemIdStr] = data.split(":");
+        const platformType = data.split(":")[1];
+        const targetId = Number(itemIdStr);
+
+        const itemIndex = db.stock[platformType].findIndex(x => x.id === targetId);
+        if (itemIndex === -1) {
+            return bot.sendMessage(chatId, "❌ Processing Failure: The item was bought by another customer a moment ago.");
+        }
+
+        const item = db.stock[platformType][itemIndex];
+
+        if (user.balance < item.price) {
+            return bot.sendMessage(chatId, "❌ Execution Dropped: Insufficient account funding balance tokens.");
+        }
+
+        // Deduct balance and update user object
+        user.balance -= item.price;
+        db.users[chatId] = user;
+
+        // Extract object out of tracking matrix arrays
+        db.stock[platformType].splice(itemIndex, 1);
+
+        // Generate complete purchase audit recipe track metrics
+        const assignedOrderId = "INV-" + Date.now().toString().substring(7);
+        db.orders[assignedOrderId] = {
+            buyer: chatId,
+            type: platformType,
+            number: item.number,
+            price: item.price,
+            time: new Date().toLocaleString()
+        };
+
+        logTransaction(db, chatId, "purchase", item.price, `Bought item ${platformType === "whatsapp" ? "WA" : "TG"}-${item.id}`);
+        
+        sortStock(db);
+        saveDB(db);
+
+        bot.answerCallbackQuery(query.id, { text: "Purchase Authorized!" });
+        
+        // Comprehensive receipt layout payload configuration delivery
+        bot.sendMessage(chatId,
+`🎉 **PURCHASE ORDER COMPLETE RECEIPT**
+
+Order Receipt Key: \`${assignedOrderId}\`
+Timestamp: _${new Date().toLocaleString()}_
+----------------------------------
+📞 **Delivered Number:** \`${item.number}\`
+🔗 **Login / SMS Link:** ${item.link || "None"}
+📝 **Extra Account Details:** \`${item.details || "None"}\`
+----------------------------------
+💰 Amount Settled: **₦${item.price}**
+Remaining Balance: **₦${user.balance}**
+
+⚠️ *Operational Notice:* Your 10-hour technical validation store warranty matrix is now active. For complaints, route Order Key to support lines.`, { parse_mode: "Markdown" });
+
+        // Trigger asynchronous alert matrices for system admins
+        return checkLowStockAlert(db, platformType);
+    }
+
+    if (data === "CANCEL_PURCHASE") {
+        bot.answerCallbackQuery(query.id, { text: "Order Cancelled" });
+        return bot.sendMessage(chatId, "❌ Purchase authorization pipeline canceled. Funds preserved.");
+    }
+});
+
+// =====================
+// KORA CHECKOUT WEBHOOK ENDPOINT
+// =====================
+app.post("/api/payment-webhook", (req, res) => {
+    try {
+        const db = loadDB();
+        const data = req.body;
+
+        const reference = data?.data?.reference;
+        const status = data?.data?.status;
+
+        if (!db.payments[reference]) return res.sendStatus(404);
+        if (db.payments[reference].status === "success") return res.sendStatus(200);
+
+        if (status === "success") {
+            const payment = db.payments[reference];
+            const userId = payment.userId;
+
+            if (!db.users[userId]) db.users[userId] = { balance: 0, ref: null };
+
+            // Determine if this is a first-time fund to process referral bonuses safely
+            const transactionList = db.history[userId] || [];
+            const hasDepositedBefore = transactionList.some(t => t.type === "deposit");
+
+            db.users[userId].balance += payment.amount;
+            logTransaction(db, userId, "deposit", payment.amount, `Wallet Top Up Ref: ${reference}`);
+            db.payments[reference].status = "success";
+
+            // Process referral rewards if conditions match safely
+            if (!hasDepositedBefore && db.users[userId].ref) {
+                const uplineReferrer = db.users[userId].ref;
+                if (db.users[uplineReferrer]) {
+                    const commissionReward = Math.floor((payment.amount * REFERRAL_BONUS_PERCENT) / 100);
+                    db.users[uplineReferrer].balance += commissionReward;
+                    
+                    if (!db.usedRefs[uplineReferrer]) db.usedRefs[uplineReferrer] = 0;
+                    db.usedRefs[uplineReferrer] += commissionReward;
+
+                    logTransaction(db, uplineReferrer, "deposit", commissionReward, `Referral bonus from new user ${userId}`);
+                    bot.sendMessage(uplineReferrer, `🎁 **Referral Bonus Credited!**\n\nYour invitee \`${userId}\` funded their account. You received **₦${commissionReward}**!`, { parse_mode: "Markdown" });
+                }
+            }
+
+            saveDB(db);
+            bot.sendMessage(userId, `💳 **Payment Confirmed Successful!**\n\n**₦${payment.amount}** has been credited to your active wallet balance ledger.`);
+        } else if (status === "failed") {
+            db.payments[reference].status = "failed";
+            saveDB(db);
+        }
+        res.sendStatus(200);
+    } catch (e) {
+        res.sendStatus(500);
+    }
+});
+
+// =====================
+// START WEB APP
+// =====================
+app.listen(3000, () => {
+    console.log("Webhook running on port 3000");
+});
+EOF

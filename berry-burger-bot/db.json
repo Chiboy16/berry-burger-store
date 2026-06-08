@@ -1,0 +1,97 @@
+{
+  "users": {
+    "6499322090": {
+      "balance": 0
+    },
+    "8281129727": {
+      "balance": 0
+    },
+    "7686174388": {
+      "balance": 0
+    },
+    "6835805256": {
+      "balance": 0,
+      "ref": null
+    }
+  },
+  "deposits": {
+    "1780488810656_6499322090": {
+      "userId": 6499322090,
+      "amount": 3500,
+      "method": "Moniepoint"
+    },
+    "1780489078501_6499322090": {
+      "userId": 6499322090,
+      "amount": 3500,
+      "method": "Moniepoint",
+      "photo": "AgACAgQAAxkBAAIFp2ogE4hzFAL4RJZ3TOATNP_ldlwzAAIXEGsbq-4BUTa7YDYbtPZOAQADAgADeQADOwQ"
+    },
+    "1780489448293_6499322090": {
+      "userId": 6499322090,
+      "amount": 2500,
+      "method": "Moniepoint",
+      "photo": "AgACAgQAAxkBAAIFp2ogE4hzFAL4RJZ3TOATNP_ldlwzAAIXEGsbq-4BUTa7YDYbtPZOAQADAgADeQADOwQ"
+    },
+    "6499322090": {
+      "step": "RECEIPT",
+      "amount": 2500,
+      "method": "Moniepoint"
+    }
+  },
+  "stock": {
+    "whatsapp": [],
+    "telegram": []
+  },
+  "logs": [],
+  "pendingDeposits": {
+    "6499322090": {
+      "step": "RECEIPT",
+      "amount": 2500,
+      "method": "Moniepoint"
+    },
+    "8281129727": {
+      "step": "RECEIPT",
+      "amount": 2500,
+      "method": "OPay"
+    }
+  },
+  "payments": {
+    "BB_1780499433054_8281129727": {
+      "userId": 8281129727,
+      "amount": 2000,
+      "status": "pending"
+    },
+    "BB_1780499597334_6499322090": {
+      "userId": 6499322090,
+      "amount": 3500,
+      "status": "pending"
+    },
+    "BB_1780499982715_7686174388": {
+      "userId": 7686174388,
+      "amount": 1000,
+      "status": "pending"
+    },
+    "BB_1780500248954_8281129727": {
+      "userId": 8281129727,
+      "amount": 2000,
+      "status": "pending"
+    },
+    "BB_1780500316508_6499322090": {
+      "userId": 6499322090,
+      "amount": 1000,
+      "status": "pending"
+    },
+    "BB_1780500376201_7686174388": {
+      "userId": 7686174388,
+      "amount": 1000,
+      "status": "pending"
+    },
+    "BB_1780502673648_6835805256": {
+      "userId": 6835805256,
+      "amount": 2500,
+      "status": "pending"
+    }
+  },
+  "referrals": {},
+  "usedRefs": {}
+}
