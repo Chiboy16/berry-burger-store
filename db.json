@@ -34,34 +34,39 @@
     "BB_1780930892041_8281129727": {
       "userId": 8281129727,
       "amount": 500,
-      "status": "pending"
+      "status": "failed"
     },
     "BB_1780930892074_8281129727": {
       "userId": 8281129727,
       "amount": 500,
-      "status": "pending"
+      "status": "failed"
     },
     "BB_1780946828307_7686174388": {
       "userId": 7686174388,
       "amount": 1000,
-      "status": "pending"
+      "status": "failed"
     },
     "BB_1780956463643_6499322090": {
       "userId": 6499322090,
       "amount": 2500,
-      "status": "pending"
+      "status": "failed"
     },
     "BB_1780956507111_8281129727": {
       "userId": 8281129727,
       "amount": 500,
-      "status": "pending"
+      "status": "failed"
     },
     "BB_1780956781209_6499322090": {
       "userId": 6499322090,
       "amount": 2500,
-      "status": "pending"
+      "status": "failed"
     },
     "BB_1780957102868_6499322090": {
+      "userId": 6499322090,
+      "amount": 2500,
+      "status": "failed"
+    },
+    "BB_1781001507531_6499322090": {
       "userId": 6499322090,
       "amount": 2500,
       "status": "pending"

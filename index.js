@@ -347,3 +347,68 @@ app.post("/api/payment-webhook", (req, res) => {
 });
 
 app.listen(3000, () => { console.log("Webhook running on port 3000"); });
+const fs = require('fs');
+const path = require('path');
+
+app.post('/webhook', (req, res) => {
+    // 1. Immediately acknowledge Korapay with a 200 OK so it stops retrying
+    res.status(200).send('Webhook Received');
+
+    const { event, data } = req.body;
+    console.log(`Incoming Webhook Event: ${event}`);
+
+    // 2. Filter for successful payment completions
+    if (event === 'charge.success' && data.status === 'success') {
+        const amountPaid = Number(data.amount); 
+        const reference = data.reference;
+        
+        // 3. Extract the Telegram User ID from Korapay's metadata object
+        const telegramId = data.metadata ? data.metadata.telegram_user_id : null;
+
+        if (!telegramId) {
+            console.log(`⚠️ Transaction ${reference} skipped: No telegram_user_id found in metadata.`);
+            return;
+        }
+
+        // 4. Point to your local JSON database path
+        const dbPath = path.join(__dirname, 'db.json');
+        
+        // Read, modify, and update the database file safely
+        fs.readFile(dbPath, 'utf8', (err, fileData) => {
+            if (err) {
+                console.error("❌ Failed to read db.json:", err);
+                return;
+            }
+
+            let db = { users: [] };
+            try {
+                db = JSON.parse(fileData);
+            } catch (pErr) {
+                console.error("❌ db.json formatting error, resetting structure.");
+            }
+
+            // Find the matching user in your array
+            const userIndex = db.users.findIndex(u => String(u.id) === String(telegramId));
+
+            if (userIndex !== -1) {
+                // User exists -> add the new funds to their wallet balance
+                db.users[userIndex].balance = (Number(db.users[userIndex].balance) || 0) + amountPaid;
+                console.log(`💰 Credited User ${telegramId} with ₦${amountPaid}. New Balance: ₦${db.users[userIndex].balance}`);
+            } else {
+                // User doesn't exist yet -> create a fresh record for them
+                db.users.push({
+                    id: Number(telegramId),
+                    balance: amountPaid
+                });
+                console.log(`🆕 Created fresh wallet record. User ${telegramId} credited with ₦${amountPaid}`);
+            }
+
+            // Write the updated wallet data back to disk
+            fs.writeFile(dbPath, JSON.stringify(db, null, 2), (wErr) => {
+                if (wErr) console.error("❌ Failed to save updated balance to db.json:", wErr);
+                else console.log(`✅ Database successfully written for reference: ${reference}`);
+            });
+        });
+    }
+});
+
