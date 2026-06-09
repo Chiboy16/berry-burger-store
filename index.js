@@ -259,8 +259,8 @@ bot.on("message", (msg) => {
             amount: amt,
             currency: "NGN",
             reference: ref,
-            notification_url: "https://berry-burger-store.onrender.com/api/payment-webhook",
-            redirect_url: "https://t.me/" + (bot.options.username || "Bot") + "_bot",
+            notification_url: "https://berry-burger-store.onrender.com/api/payment-webhook
+            redirect_url: "https://t.me/Berryburgersmsbot",
             customer: {
                 email: chatId + "@telegram.com",
                 name: msg.from.first_name || "Telegram User"
