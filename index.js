@@ -332,7 +332,6 @@ app.post("/api/payment-webhook", (req, res) => {
         const ref = data?.reference; 
         const status = data?.status;
 
-        console.log(`💳 Webhook Triggered. Event: ${event}, Ref: ${ref}, Status: ${status}`);
 
         if (!ref || !db.payments[ref]) return;
         if (db.payments[ref].status === "success") return;
@@ -341,12 +340,20 @@ app.post("/api/payment-webhook", (req, res) => {
             const payment = db.payments[ref]; 
             const uid = payment.userId;
             
-            if (!db.users[uid]) db.users[uid] = { balance: 0, ref: null };
+            // Safer initialization: keep existing data if it exists
+             if (!db.users[uid]) {
+                db.users[uid] = { balance: 0, ref: null };
+            } else if (db.users[uid].balance === undefined) {
+                db.users[uid].balance = 0;
+            }
+
             const hasDep = (db.history[uid] || []).some(t => t.type === "deposit");
 
-            db.users[uid].balance += payment.amount;
+            // Explicitly force addition to the current numerical balance
+            db.users[uid].balance = Number(db.users[uid].balance) + Number(payment.amount);
             logTransaction(db, uid, "deposit", payment.amount, `Top Up Ref: ${ref}`);
             db.payments[ref].status = "success";
+
 
             console.log(`💰 Successfully credited User ${uid} with ₦${payment.amount}`);
 
