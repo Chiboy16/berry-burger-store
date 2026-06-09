@@ -1,4 +1,4 @@
-require("dotenv").config();
+require(”dotenv").config();
 const fs = require("fs");
 const path = require("path");
 const express = require("express");
@@ -259,7 +259,7 @@ bot.on("message", (msg) => {
             amount: amt,
             currency: "NGN",
             reference: ref,
-            notification_url: "https://berry-burger-store.onrender.com/api/payment-webhook
+            notification_url: "https://berry-burger-store.onrender.com/api/payment-webhook"
             redirect_url: "https://t.me/Berryburgersmsbot",
             customer: {
                 email: chatId + "@telegram.com",
