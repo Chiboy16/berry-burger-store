@@ -1,5 +1,6 @@
 require("dotenv").config();
 const fs = require("fs");
+const path = require("path");
 const express = require("express");
 const TelegramBot = require("node-telegram-bot-api");
 const axios = require("axios");
@@ -48,6 +49,7 @@ function checkLowStockAlert(db, type) {
         bot.sendMessage(ADMIN_ID, `⚠️ **LOW STOCK ALERT** ⚠️\n\nThe ${type.toUpperCase()} inventory has fallen down to **${count}** items left!`);
     }
 }
+
 setInterval(() => {
     try {
         const db = loadDB(); let changed = false; const cutoff = Date.now() - 60 * 60 * 1000;
@@ -62,8 +64,8 @@ setInterval(() => {
 }, 10 * 60 * 1000);
 
 function menu(chatId, balance = 0) {
-    const keyboard = [["💰 Top Up Wallet", "🛒 Buy Numbers"], ["💳 Balance & History", "👥 Invite Program"], ["📞 FAQ", "📞 Support"]];
-    if (chatId === ADMIN_ID) { keyboard.splice(2, 0, ["📊 Admin Panel"]); }
+    const keyboard = [["💰 Top Up Wallet", "🛒 Buy Numbers"], ["💳 Balance & History", "👥 Invite Program"], [" 📞 FAQ", "📞 Support"]];
+    if (chatId === ADMIN_ID) { keyboard.splice(2, 0, [" 📊 Admin Panel"]); }
     bot.sendMessage(chatId, `🍓 **Berry Burger Store**\n\nBalance: **₦${balance}**\n\nSelect an action below 👇`, {
         parse_mode: "Markdown", reply_markup: { keyboard: keyboard, resize_keyboard: true }
     });
@@ -249,7 +251,7 @@ bot.on("message", (msg) => {
             return bot.sendMessage(chatId, "❌ Invalid amount. Please enter a number greater than or equal to 100:");
         }
         delete adminState[chatId];
-        
+
         bot.sendMessage(chatId, "⏳ Generating secure checkout link, please wait...");
         const ref = "BB_" + Date.now() + "_" + chatId;
 
@@ -257,7 +259,7 @@ bot.on("message", (msg) => {
             amount: amt,
             currency: "NGN",
             reference: ref,
-            notification_url: "https://your-domain.com/api/payment-webhook",
+            notification_url: "https://berry-burger-store.onrender.com/api/payment-webhook",
             redirect_url: "https://t.me/" + (bot.options.username || "Bot") + "_bot",
             customer: {
                 email: chatId + "@telegram.com",
@@ -289,6 +291,7 @@ bot.on("message", (msg) => {
         return;
     }
 });
+
 bot.on("callback_query", (query) => {
     const data = query.data; const chatId = query.message.chat.id; const db = loadDB();
     const user = db.users[chatId] || { balance: 0, ref: null };
@@ -318,15 +321,26 @@ bot.on("callback_query", (query) => {
     }
     if (data === "CANCEL") { bot.answerCallbackQuery(query.id); return bot.sendMessage(chatId, "❌ Cancelled."); }
 });
-app.post("/api/payment-webhook", (req, res) => {
-    try {
-        const db = loadDB(); const data = req.body;
-        const ref = data?.data?.reference; const status = data?.data?.status;
-        if (!db.payments[ref]) return res.sendStatus(404);
-        if (db.payments[ref].status === "success") return res.sendStatus(200);
 
-        if (status === "success") {
-            const payment = db.payments[ref]; const uid = payment.userId;
+app.post("/api/payment-webhook", (req, res) => {
+    res.sendStatus(200);
+    try {
+        const db = loadDB(); 
+        const payload = req.body;
+        const data = payload.data || payload;
+        const event = payload.event;
+        const ref = data?.reference; 
+        const status = data?.status;
+
+        console.log(`💳 Webhook Triggered. Event: ${event}, Ref: ${ref}, Status: ${status}`);
+
+        if (!ref || !db.payments[ref]) return;
+        if (db.payments[ref].status === "success") return;
+
+        if (status === "success" || event === "charge.success") {
+            const payment = db.payments[ref]; 
+            const uid = payment.userId;
+            
             if (!db.users[uid]) db.users[uid] = { balance: 0, ref: null };
             const hasDep = (db.history[uid] || []).some(t => t.type === "deposit");
 
@@ -334,84 +348,21 @@ app.post("/api/payment-webhook", (req, res) => {
             logTransaction(db, uid, "deposit", payment.amount, `Top Up Ref: ${ref}`);
             db.payments[ref].status = "success";
 
+            console.log(`💰 Successfully credited User ${uid} with ₦${payment.amount}`);
+
             if (!hasDep && db.users[uid].ref && db.users[db.users[uid].ref]) {
-                const up = db.users[uid].ref; const rwd = Math.floor((payment.amount * REFERRAL_BONUS_PERCENT) / 100);
-                db.users[up].balance += rwd; db.usedRefs[up] = (db.usedRefs[up] || 0) + rwd;
+                const up = db.users[uid].ref; 
+                const rwd = Math.floor((payment.amount * REFERRAL_BONUS_PERCENT) / 100);
+                db.users[up].balance += rwd; 
+                db.usedRefs[up] = (db.usedRefs[up] || 0) + rwd;
                 logTransaction(db, up, "deposit", rwd, `Referral bonus from ${uid}`);
                 bot.sendMessage(up, `🎁 **Referral Bonus Credited!**\n\nReceived **₦${rwd}**!`);
             }
-            saveDB(db); bot.sendMessage(uid, `💳 **Wallet Funded Successfully!** Added **₦${payment.amount}**.`);
+            saveDB(db); 
+            bot.sendMessage(uid, `💳 **Wallet Funded Successfully!** Added **₦${payment.amount}**.`);
         }
-        res.sendStatus(200);
-    } catch (e) { res.sendStatus(500); }
+    } catch (e) { console.error("❌ Webhook internal processing failure:", e.message); }
 });
 
 app.listen(3000, () => { console.log("Webhook running on port 3000"); });
-const fs = require('fs');
-const path = require('path');
-
-app.post('/webhook', (req, res) => {
-    // 1. Immediately acknowledge Korapay with a 200 OK so it stops retrying
-    res.status(200).send('Webhook Received');
-
-    const { event, data } = req.body;
-    console.log(`Incoming Webhook Event: ${event}`);
-
-    // 2. Filter for successful payment completions
-    if (event === 'charge.success' && data.status === 'success') {
-        const amountPaid = Number(data.amount); 
-        const reference = data.reference;
-        
-        // 3. Extract the Telegram User ID from Korapay's metadata object
-        const telegramId = data.metadata ? data.metadata.telegram_user_id : null;
-
-        if (!telegramId) {
-            console.log(`⚠️ Transaction ${reference} skipped: No telegram_user_id found in metadata.`);
-            return;
-        }
-
-        // 4. Point to your local JSON database path
-        const dbPath = path.join(__dirname, 'db.json');
-        
-        // Read, modify, and update the database file safely
-        fs.readFile(dbPath, 'utf8', (err, fileData) => {
-            if (err) {
-                console.error("❌ Failed to read db.json:", err);
-                return;
-            }
-
-            let db = { users: [] };
-            try {
-                db = JSON.parse(fileData);
-            } catch (pErr) {
-                console.error("❌ db.json formatting error, resetting structure.");
-            }
-
-            // Find the matching user in your array
-            const userIndex = db.users.findIndex(u => String(u.id) === String(telegramId));
-
-            if (userIndex !== -1) {
-                // User exists -> add the new funds to their wallet balance
-                db.users[userIndex].balance = (Number(db.users[userIndex].balance) || 0) + amountPaid;
-                console.log(`💰 Credited User ${telegramId} with ₦${amountPaid}. New Balance: ₦${db.users[userIndex].balance}`);
-            } else {
-                // User doesn't exist yet -> create a fresh record for them
-                db.users.push({
-                    id: Number(telegramId),
-                    balance: amountPaid
-                });
-                console.log(`🆕 Created fresh wallet record. User ${telegramId} credited with ₦${amountPaid}`);
-            }
-
-            // Write the updated wallet data back to disk
-            fs.writeFile(dbPath, JSON.stringify(db, null, 2), (wErr) => {
-                if (wErr) console.error("❌ Failed to save updated balance to db.json:", wErr);
-                else console.log(`✅ Database successfully written for reference: ${reference}`);
-            });
-        });
-    }
-});
-
-// const fs = require('fs');
-// const path = require('path');
 
